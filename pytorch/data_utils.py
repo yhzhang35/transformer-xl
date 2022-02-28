@@ -174,7 +174,7 @@ class LMMultiFileIterator(LMShuffledIterator):
             for batch in self.stream_iterator(sent_stream):
                 yield batch
 
-
+'''基于vocab类生成自己的语料库'''
 class Corpus(object):
     def __init__(self, path, dataset, *args, **kwargs):
         self.dataset = dataset
@@ -195,6 +195,7 @@ class Corpus(object):
 
         self.vocab.build_vocab()
 
+        '''感觉有了上面的，下面的代码没有什么作用'''
         if self.dataset in ['ptb', 'wt2', 'wt103']:
             self.train = self.vocab.encode_file(
                 os.path.join(path, 'train.txt'), ordered=True)

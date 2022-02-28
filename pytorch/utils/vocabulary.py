@@ -34,8 +34,9 @@ class Vocab(object):
             return symbols
 
     def count_file(self, path, verbose=False, add_eos=False):
-        if verbose: print('counting file {} ...'.format(path))
-        assert os.path.exists(path)
+        print(path)
+        # if verbose: print('counting file {} ...'.format(path))
+        # assert os.path.exists(path)
 
         sents = []
         with open(path, 'r', encoding='utf-8') as f:
