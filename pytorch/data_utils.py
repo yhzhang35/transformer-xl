@@ -233,7 +233,7 @@ class Corpus(object):
 
         return data_iter
 
-
+'''获取语料类，如果有直接读出'''
 def get_lm_corpus(datadir, dataset):
     fn = os.path.join(datadir, 'cache.pt')
     if os.path.exists(fn):
