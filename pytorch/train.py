@@ -15,6 +15,10 @@ from data_utils import get_lm_corpus
 from mem_transformer import MemTransformerLM
 from utils.exp_utils import create_exp_dir
 from utils.data_parallel import BalancedDataParallel
+import warnings
+# action参数可以设置为ignore，一位一次也不喜爱你是，once表示为只显示一次
+warnings.filterwarnings(action='ignore')
+
 
 parser = argparse.ArgumentParser(description='PyTorch Transformer Language Model')
 parser.add_argument('--data', type=str, default='../data/wikitext-103',
@@ -438,7 +442,10 @@ def train():
     else:
         mems = tuple()
     train_iter = tr_iter.get_varlen_iter() if args.varlen else tr_iter
+
     for batch, (data, target, seq_len) in enumerate(train_iter):
+        # print((data.shape,target.shape))
+        # >>> (torch.Size([512, 22]), torch.Size([512, 22]))
         model.zero_grad()
         if args.batch_chunk > 1:
             data_chunks = torch.chunk(data, args.batch_chunk, 1)
@@ -454,7 +461,9 @@ def train():
                 else:
                     loss.backward()
                 train_loss += loss.float().item()
+
         else:
+            '''一般情况chunk是等于一的'''
             ret = para_model(data, target, *mems)
             loss, mems = ret[0], ret[1:]
             loss = loss.float().mean().type_as(loss)
@@ -474,6 +483,7 @@ def train():
             optimizer_sparse.step()
 
         # step-wise learning rate annealing
+        '''学习率随着step动态调整'''
         train_step += 1
         if args.scheduler in ['cosine', 'constant', 'dev_perf']:
             # linear warmup stage
@@ -490,6 +500,7 @@ def train():
         elif args.scheduler == 'inv_sqrt':
             scheduler.step(train_step)
 
+        '''打印对应日志'''
         if train_step % args.log_interval == 0:
             cur_loss = train_loss / args.log_interval
             elapsed = time.time() - log_start_time
@@ -505,6 +516,7 @@ def train():
             train_loss = 0
             log_start_time = time.time()
 
+        '''评估模型，并打印日志'''
         if train_step % args.eval_interval == 0 or train_step == args.max_step:
             val_loss = evaluate(va_iter)
             logging('-' * 100)
@@ -518,6 +530,7 @@ def train():
                 log_str += ' | valid ppl {:9.3f}'.format(math.exp(val_loss))
             logging(log_str)
             logging('-' * 100)
+            '''如果结果比之前的好，那么就存储下来'''
             # Save the model if the validation loss is the best we've seen so far.
             if not best_val_loss or val_loss < best_val_loss:
                 if not args.debug:
@@ -535,6 +548,9 @@ def train():
 
             eval_start_time = time.time()
 
+        # if batch==15:
+        #     break
+        '''作者以batch_size作为一step'''
         if train_step == args.max_step:
             break
 
