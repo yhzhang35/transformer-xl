@@ -97,7 +97,7 @@ class MultiHeadAttn(nn.Module):
             c = torch.cat([mems, h], 0)
         else:
             c = h
-
+        # 正则化
         if self.pre_lnorm:
             ##### layer normalization
             c = self.layer_norm(c)
@@ -105,6 +105,7 @@ class MultiHeadAttn(nn.Module):
         head_q = self.q_net(h)
         head_k, head_v = torch.chunk(self.kv_net(c), 2, -1)
 
+        # 转换q,k,v的形状
         head_q = head_q.view(h.size(0), h.size(1), self.n_head, self.d_head)
         head_k = head_k.view(c.size(0), c.size(1), self.n_head, self.d_head)
         head_v = head_v.view(c.size(0), c.size(1), self.n_head, self.d_head)
@@ -114,9 +115,9 @@ class MultiHeadAttn(nn.Module):
         attn_score.mul_(self.scale)
         if attn_mask is not None and attn_mask.any().item():
             if attn_mask.dim() == 2:
-                attn_score.masked_fill_(attn_mask[None,:,:,None], -float('inf'))
+                attn_score.masked_fill_(attn_mask[None,:,:,None].bool(), -float('inf')).bool()
             elif attn_mask.dim() == 3:
-                attn_score.masked_fill_(attn_mask[:,:,:,None], -float('inf'))
+                attn_score.masked_fill_(attn_mask[:,:,:,None].bool(), -float('inf')).bool()
 
         # [qlen x klen x bsz x n_head]
         attn_prob = F.softmax(attn_score, dim=1)
@@ -131,6 +132,7 @@ class MultiHeadAttn(nn.Module):
         attn_out = self.o_net(attn_vec)
         attn_out = self.drop(attn_out)
 
+        # 加上残差网络结构
         if self.pre_lnorm:
             ##### residual connection
             output = h + attn_out
@@ -163,7 +165,7 @@ class RelMultiHeadAttn(nn.Module):
         self.pre_lnorm = pre_lnorm
 
     def _parallelogram_mask(self, h, w, left=False):
-        mask = torch.ones((h, w)).byte()
+        mask = torch.ones((h, w)).bool()
         m = min(h, w)
         mask[:m,:m] = torch.triu(mask[:m,:m])
         mask[-m:,-m:] = torch.tril(mask[-m:,-m:])
@@ -509,7 +511,7 @@ class MemTransformerLM(nn.Module):
         self.n_head = n_head
         self.d_head = d_head
 
-        self.word_emb = AdaptiveEmbedding(n_token, d_embed, d_model, cutoffs, 
+        self. word_emb = AdaptiveEmbedding(n_token, d_embed, d_model, cutoffs,
                                           div_val=div_val)
 
         self.drop = nn.Dropout(dropout)
@@ -524,6 +526,7 @@ class MemTransformerLM(nn.Module):
         self.attn_type = attn_type
 
         self.layers = nn.ModuleList()
+        '''每层注意力方式'''
         if attn_type == 0: # the default attention
             for i in range(n_layer):
                 self.layers.append(
@@ -642,6 +645,7 @@ class MemTransformerLM(nn.Module):
     def _forward(self, dec_inp, mems=None):
         qlen, bsz = dec_inp.size()
 
+        '''将输入one-hot编码，转换为embedding'''
         word_emb = self.word_emb(dec_inp)
 
         mlen = mems[0].size(0) if mems is not None else 0
@@ -653,26 +657,31 @@ class MemTransformerLM(nn.Module):
                 mask_shift_len = qlen - mask_len
             else:
                 mask_shift_len = qlen
+                # 为了减少Warning,将byte()改为bool()
             dec_attn_mask = (torch.triu(all_ones, 1+mlen)
-                    + torch.tril(all_ones, -mask_shift_len)).byte()[:, :, None] # -1
+                    + torch.tril(all_ones, -mask_shift_len)).bool()[:, :, None] # -1
         else:
             dec_attn_mask = torch.triu(
-                word_emb.new_ones(qlen, klen), diagonal=1+mlen).byte()[:,:,None]
+                word_emb.new_ones(qlen, klen), diagonal=1+mlen).bool()[:,:,None]
 
         hids = []
         if self.attn_type == 0: # default
+            '''生成相对位置的相对距离'''
             pos_seq = torch.arange(klen-1, -1, -1.0, device=word_emb.device, 
                                    dtype=word_emb.dtype)
             if self.clamp_len > 0:
                 pos_seq.clamp_(max=self.clamp_len)
+            '''将相对距离转换为embedding'''
             pos_emb = self.pos_emb(pos_seq)
 
             core_out = self.drop(word_emb)
             pos_emb = self.drop(pos_emb)
 
+            '''第-1层的输出，也是第0层的输入'''
             hids.append(core_out)
             for i, layer in enumerate(self.layers):
                 mems_i = None if mems is None else mems[i]
+                '''每一层迭代'''
                 core_out = layer(core_out, pos_emb, self.r_w_bias,
                         self.r_r_bias, dec_attn_mask=dec_attn_mask, mems=mems_i)
                 hids.append(core_out)
@@ -728,6 +737,7 @@ class MemTransformerLM(nn.Module):
                                  mems=mems_i)
                 hids.append(core_out)
 
+        '''返回对应的参数'''
         core_out = self.drop(core_out)
 
         new_mems = self._update_mems(hids, mems, mlen, qlen)
@@ -742,6 +752,7 @@ class MemTransformerLM(nn.Module):
         if not mems: mems = self.init_mems()
 
         tgt_len = target.size(0)
+        '''模型计算'''
         hidden, new_mems = self._forward(data, mems=mems)
 
         pred_hid = hidden[-tgt_len:]
@@ -751,6 +762,7 @@ class MemTransformerLM(nn.Module):
                 self.out_layer.bias, target, pred_hid, self.sampler)
             loss = -F.log_softmax(logit, -1)[:, :, 0]
         else:
+            '''将target拉成一维求loss,loss的结果是batch_size*target_len'''
             loss = self.crit(pred_hid.view(-1, pred_hid.size(-1)), target.view(-1))
             loss = loss.view(tgt_len, -1)
 

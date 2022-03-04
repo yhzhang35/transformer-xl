@@ -15,9 +15,8 @@ from data_utils import get_lm_corpus
 from mem_transformer import MemTransformerLM
 from utils.exp_utils import create_exp_dir
 from utils.data_parallel import BalancedDataParallel
-import warnings
-# action参数可以设置为ignore，一位一次也不喜爱你是，once表示为只显示一次
-warnings.filterwarnings(action='ignore')
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 
 parser = argparse.ArgumentParser(description='PyTorch Transformer Language Model')
@@ -276,7 +275,7 @@ def update_dropatt(m):
     if hasattr(m, 'dropatt'):
         m.dropatt.p = args.dropatt
 
-
+'''构建模型并存储'''
 if args.restart:
     with open(os.path.join(args.restart_dir, 'model.pt'), 'rb') as f:
         model = torch.load(f)
@@ -307,6 +306,7 @@ if args.multi_gpu:
                                           model, dim=1).to(device)
     else:
         para_model = nn.DataParallel(model, dim=1).to(device)
+# 因为是单gpu,所以就运行下面代码
 else:
     para_model = model.to(device)
 
@@ -436,6 +436,7 @@ def evaluate(eval_iter):
 def train():
     # Turn on training mode which enables dropout.
     global train_step, train_loss, best_val_loss, eval_start_time, log_start_time
+    # 将该模型设置为训练模式
     model.train()
     if args.batch_chunk > 1:
         mems = [tuple() for _ in range(args.batch_chunk)]
@@ -453,6 +454,7 @@ def train():
             for i in range(args.batch_chunk):
                 data_i = data_chunks[i].contiguous()
                 target_i = target_chunks[i].contiguous()
+                # 模型训练，para_model根据gpu的个数来决定模型的并行构造
                 ret = para_model(data_i, target_i, *mems[i])
                 loss, mems[i] = ret[0], ret[1:]
                 loss = loss.float().mean().type_as(loss) / args.batch_chunk
@@ -464,6 +466,8 @@ def train():
 
         else:
             '''一般情况chunk是等于一的'''
+            '''data和target错位一个字符'''
+            # print((data[:,1],target[:,1]))
             ret = para_model(data, target, *mems)
             loss, mems = ret[0], ret[1:]
             loss = loss.float().mean().type_as(loss)

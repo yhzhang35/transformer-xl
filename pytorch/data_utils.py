@@ -257,13 +257,14 @@ def get_lm_corpus(datadir, dataset):
 
         corpus = Corpus(datadir, dataset, **kwargs)
         torch.save(corpus, fn)
-
+    '''给corpus添加不存在的字符'''
+    [corpus.vocab.add_symbol(str(i)) for i in range(256)]
     return corpus
 
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='unit test')
-    parser.add_argument('--datadir', type=str, default='../data/text8',
+    parser.add_argument('--datadir', type=str, default='./text8',
                         help='location of the data corpus')
     parser.add_argument('--dataset', type=str, default='text8',
                         choices=['ptb', 'wt2', 'wt103', 'lm1b', 'enwik8', 'text8'],
@@ -272,3 +273,6 @@ if __name__ == '__main__':
 
     corpus = get_lm_corpus(args.datadir, args.dataset)
     print('Vocab size : {}'.format(len(corpus.vocab.idx2sym)))
+    [corpus.vocab.add_symbol(str(i)) for i in range(256)]
+    print('Vocab size : {}'.format(len(corpus.vocab.idx2sym)))
+    print(corpus.vocab.idx2sym)

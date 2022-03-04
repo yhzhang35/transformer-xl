@@ -79,10 +79,16 @@ class ProjectedAdaptiveLogSoftmax(nn.Module):
         if hidden.size(0) != target.size(0):
             raise RuntimeError('Input and target should have the same size '
                                'in the batch dimension.')
-
+        '''默认会进入下面的分支'''
         if self.n_clusters == 0:
+            '''最后加上一个线性回归'''
+            # print((hidden.shape,self.out_layers[0].weight.shape,
+                                        # self.out_layers[0].bias.shape,))
+            # (torch.Size([2048, 128]), torch.Size([256, 128]), torch.Size([256]))
             logit = self._compute_logit(hidden, self.out_layers[0].weight,
                                         self.out_layers[0].bias, self.out_projs[0])
+
+            '''log_softmax 是将softmax求得的值，在进行一个log,下面是一个损失函数的计算，返回的是每个预测的loss'''
             nll = -F.log_softmax(logit, dim=-1) \
                     .gather(1, target.unsqueeze(1)).squeeze(1)
         else:
